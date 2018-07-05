@@ -1,0 +1,538 @@
+---
+title: "Semiparametric regression"
+author: "Makowski Micha³"
+date: "10 may 2017"
+output: 
+  pdf_document: 
+    fig_caption: true
+    highlight: tango
+    toc: true
+fontsize: 10pt
+geometry: margin=1.5cm
+subtitle: 'Homework Assignment #3' 
+lang: en-EN 
+---
+
+```{r knitrOptions, include=FALSE}
+
+options(scipen = 999)
+
+inline_hook = function(x) { if (is.numeric(x)) { format(x, digits=2) } else x}
+
+knitr::knit_hooks$set(inline=inline_hook)
+knitr::opts_chunk$set(fit.align="center", warning=FALSE, error=FALSE, message=FALSE, echo=FALSE,
+                      tidy.opts=list(keep.blank.line=TRUE, width.cutoff=120),
+                      options(width=100), fig.height=5.5,
+                      fig.width=10, fig.show='hold', size='footnotesize')
+
+```
+
+```{r libraries, include=FALSE}
+
+rm(list=ls())
+
+options(width=100)
+library(gss)
+library(gam)
+library(lattice)
+library(HRW)
+library(GGally)
+
+```
+
+# Introduction
+
+This couple pages cover third homework for Semiparametric Regression, 
+a course conducted by proffesor Jaros³aw Harê¿lak at University of Wroc³aw. 
+On the following pages two exercises will be presented. First one compares two different methods of fitting splines on data about 
+ozone concentration in Los Angeles. Second is focused on comparing diffrent curve fits on data about milk characteristc among
+different cows with different diets.
+
+\newpage
+
+# Exercise I
+
+In this exercise we want to construct a model, which says us how ozone concentration depends on others variables.
+To do it we use Generalized Additive Models.
+
+## Description of data
+
+Daily measurements of ozone concentration and eight meteorological quantities in the Los Angeles basin for 330 days of 1976.
+
+A data frame containing 330 observations on the following variables.
+
+* **upo3**-	 Upland ozone concentration, in ppm.  
+* **vdht**-	 Vandenberg 500 millibar height, in meters.  
+* **wdsp**-	 Wind speed, in miles per hour.  
+* **hmdt**-	 Humidity.  
+* **sbtp**-	 Sandburg Air Base temperature, in Celsius.  
+* **ibht**-	 Inversion base height, in foot.  
+* **dgpg**-	 Dagget pressure gradient, in mmHg.  
+* **ibtp**-	 Inversion base temperature, in Fahrenheit.  
+* **vsty**-	 Visibility, in miles.  
+* **day**-   Calendar day, between 1 and 366. 
+
+## Relations beetween data
+
+Let's invistigate data with `ggpairs(ozone)` command.
+
+```{r ggPairs1}
+
+data(ozone)
+ggpairs(ozone)
+
+```
+
+We could see that relations are mostly non linear. 
+
+## Model selection
+
+We build full model and then, using *step.Gam()* function, we to select predictors and their diffrent forms among Gaussian GAMs 
+with `upo3` as the response variable. We will choose beetween linear and nonlinear forms.
+
+```{r gamStep1}
+
+fitUpo3 <- gam(upo3 ~ vdht + wdsp + hmdt + sbtp + ibht + dgpg + ibtp + vsty + day, 
+               data = ozone)
+
+stepFitupo3 <- step.Gam(fitUpo3,
+                        scope = list("vdht" = ~ 1+vdht+s(vdht,2),
+                                     "wdsp" = ~ 1+wdsp+s(wdsp,2),
+                                     "hmdt" = ~ 1+hmdt+s(hmdt,2),
+                                     "sbtp" = ~ 1+sbtp+s(sbtp,2),
+                                     "ibht" = ~ 1+ibht+s(ibht,2),
+                                     "dgpg" = ~ 1+dgpg+s(dgpg,2),
+                                     "ibtp" = ~ 1+ibtp+s(ibtp,2),
+                                     "vsty" = ~ 1+vsty+s(vsty,2),
+                                     "day"  = ~ 1+day +s(day,2)))
+
+```
+
+For stepwise search AIC is the smallest for model with predictors presented below.
+
+```{r modelSummary1, echo=TRUE}
+
+names(stepFitupo3$"model")[-1]
+
+```
+
+## Model with GCV-based smoothing parameter selection
+
+Now we fit model with predictors, which was chosen in previous part.
+
+```{r libraryDetach1}
+
+detach(package:gam)
+library(mgcv)
+apply(ozone, 2, function(x){length(unique(x))})
+
+```
+
+Model summary is presented below.
+
+```{r mgcvModel1, echo=TRUE}
+
+fitStepOzone <- gam(upo3 ~ vdht + wdsp + hmdt +
+                        s(sbtp, k=2) + s(ibht, k=2) + s(dgpg, k=2) + 
+                        s(ibtp, k=2) + s(vsty, k=2) + s(day, k=2), data = ozone)
+
+fitStepOzone
+
+```
+
+## Model modyfication
+
+In this part we want to choose model with sufficient number of basis functions. 
+To do this we loop over a number of basis function level until we receive satisfactory results.
+We have to modify k's manually - chosen formula is presented below.
+There should be more diagnostics done in this part to develop best model and fully check it.
+
+```{r loop1}
+
+m <- 20
+p <- vector(length = m-2)
+
+for( i in 3:m)
+{
+    fitStepOzoneTemp <- gam(upo3 ~ vdht + wdsp + hmdt +
+                                s(sbtp, k=i) + 
+                                s(ibht, k=i) +
+                                s(dgpg, k=i) + 
+                                s(ibtp, k=i) +
+                                s(vsty, k=i) + 
+                                s(day, k=i), data = ozone)
+}
+
+# plot(3:m, p, xlab = "k-index", ylab = "p-value") 
+# lines(3:m, rep(0.05, length.out=m-2), col = "red")
+
+fitStepOzoneTemp6 <- gam(upo3 ~  
+                             vdht  + wdsp + hmdt + 
+                             s(sbtp, k=5) + s(ibht, k=7) + s(dgpg, k=15) + 
+                             s(ibtp, k=25) + s(vsty, k=5) + s(day, k=15),  
+                         data = ozone)
+
+
+# summary(fitStepOzoneTemp6)$s.pv
+
+```
+
+
+
+```{r residualsCheck1}
+
+gam.check(fitStepOzoneTemp6)
+
+```
+
+Probability distribution of deviance residuals is almost normal, but the residuals variance is not constant. 
+There is a very quadratic dependence between residuals and linear predictors, 
+Unfortunetelly, we were unable to find model, which looks MUCH better than this presented above.
+
+\newpage
+# Exercise II
+
+In this task we have data contaning measurements of the milk protein level over time since calving. 
+Data contains information for of 79 cows. There were three types of diet.
+In first part we illustrate the fitting of additive mixed models for all cows. 
+Next we show group-specific curves semiparametric mixed model for each diet group.
+
+First we, we will dive into the data more.
+
+```{r milkIntro2}
+
+library(dplyr)
+
+data("Milk")
+
+
+Milk %>% 
+        mutate( barley = as.numeric( (Diet == "barley") ),
+                lupins = as.numeric( (Diet == "lupins"))) ->
+        Milk
+
+summary(Milk)
+
+```
+
+```{r plot2}
+
+library(ggplot2)
+
+ggplot(Milk, aes(x = Time, y = protein, color = Cow)) +
+    geom_point() +
+    geom_line() +
+    guides(color=FALSE) + 
+    facet_grid(Diet~ .) +
+    labs(title = "Protein content of milk",
+         subtitle= "Grouped by diet",
+         x = "Time moment") +
+    scale_x_continuous(labels = seq(0,20,2),
+                       breaks = seq(0,20,2)) +
+    theme_minimal()
+
+```
+
+## GAMM
+
+Now we build the first model. 
+We have 79 cows and three groups: **barley, lupins** and **barley+lupins**. 
+
+$$ protein_{ij} = U_i + f(time_{ij}) +\beta_1barley_i+\beta_2 lupins+\epsilon_{ij}$$
+$$U_i \overset{iid}{\sim} \mathcal{N}(0,\sigma^2), \qquad \epsilon_{ij}\overset{iid}{\sim} \mathcal{N}(0,\sigma_{\epsilon}^2) $$
+We fit GAMM with fixed **time**, **diet group** and random subject **cow number*.*
+
+```{r firstFit2}
+
+fitProt <- gamm(protein ~ s(Time)+lupins+barley, random = list(Cow = ~1), data = Milk )
+
+```
+
+Now we plot and sum up centralized penelized spline.
+
+```{r plotModel2}
+
+plot(fitProt$gam, shade = T, shade.col = "palegreen")
+
+summary(fitProt$gam)
+
+```
+
+We could observe low $R^2$. 
+All predictors are useful regarding t-test
+
+## Group specific splines
+
+Here we focus on group-specific curvs 
+
+As we could see below models seems to be rather well fitted, but there are some outlier visible.
+
+```{r dplyr2}
+
+ExtractDiet <- function(name_diet)
+{
+        Milk %>%
+        filter( Diet == name_diet )  
+}
+
+Barley <- ExtractDiet("barley") 
+Lupins <- ExtractDiet("lupins") 
+BarLup <- ExtractDiet("barley+lupins") 
+
+```
+
+```{r, echo = F, message = T}
+
+MilkData <- Barley
+dimplot <- c(5,5)
+title <- "Barley"
+
+        MilkData$Cow <- as.vector(MilkData$Cow) 
+        time <- MilkData$Time
+        protein <- MilkData$protein
+        cow <- MilkData$Cow
+        
+        uqCow <- unique(cow)
+        uqCowTab <- table(cow)
+        uqCowLen <- length(uqCow)
+        MilkData$cowBM <- as.numeric( factor(rep(uqCow,uqCowTab),
+                                             labels = 1:uqCowLen))
+        cowBM <- MilkData$cowBM
+        
+        numGrp <- uqCowLen
+        numIntKnotsGbl <- 20
+        intKnotsGbl <- quantile(unique(time),
+                        seq(0,1,length=numIntKnotsGbl+2))[-c(1,numIntKnotsGbl+2)] 
+        
+        range.time <- c(min(MilkData$Time), max(Milk$Time))
+        Zgbl <- ZOSull(time, range.x = range.time, intKnots = intKnotsGbl)
+        
+        numIntKnotsGrp <- 10
+        intKnotsGrp <- quantile(unique(time),
+                        seq(0,1,length=numIntKnotsGrp+2))[-c(1,numIntKnotsGrp+2)]
+        Zgrp <- ZOSull(time, range.x = range.time, intKnots = intKnotsGrp)
+        
+        dummyId <- factor(rep(1,length(protein)))
+        
+        Zblock <- list(dummyId = pdIdent(~ -1 + Zgbl),
+                       cowBM = pdSymm(~time),
+                       cowBM = pdIdent(~-1+Zgrp))
+        
+        
+        MilkGD <- groupedData(protein ~ time|rep(1, length = length(protein)),
+                              data = data.frame(protein, time, Zgbl, Zgrp, cowBM ))
+        fitMilkGD <- lme(protein ~ time, data=MilkGD, random = Zblock)
+
+        ng <- 250
+        timeg <- seq(range.time[1], range.time[2], length = ng)
+        Xg <- cbind(rep(1,ng), timeg)
+        Zgblg <- ZOSull(timeg,range.x = range.time, intKnots = intKnotsGbl)
+        Zgrpg <- ZOSull(timeg,range.x = range.time, intKnots = intKnotsGrp)
+        
+        betaHat <- as.vector(fitMilkGD$coef$fixed)
+        uHat <- as.vector(fitMilkGD$coef$random[[1]])
+        fHatg <- as.vector(Xg%*%betaHat + Zgblg%*%uHat)
+        
+        curvEsts <- vector("list", numGrp)
+        for(i in 1:numGrp){
+                uLinHati <- as.vector(fitMilkGD$coef$random[[2]][i,])
+                uSplHati <- as.vector(fitMilkGD$coef$random[[3]][i,])
+                ghati <- Xg%*%uLinHati + Zgrpg%*%uSplHati
+                curvEsts[[i]] <- fHatg + ghati
+        }
+        
+        xyplot( protein ~ time|cowBM, groups = cowBM,
+                data = MilkData,
+                strip = FALSE,
+                xlab = "Time moment",
+                ylab = "Protein level",
+                main = title,
+                as.table = TRUE, layout = c(dimplot[1],dimplot[2]),
+                panel = function(x,y,subscripts,groups){
+                        
+                        panel.grid()
+                        adolNum <- cowBM[subscripts][1]
+                        panel.superpose(x,y,subscripts,groups,
+                        col = "darkgreen",type = "b")
+                        panel.xyplot(timeg, curvEsts[[adolNum]],
+                                     col = "palegreen", type ="l")
+                })
+
+```
+
+```{r, echo = F, message = T}
+
+MilkData <- Lupins
+dimplot <- c(6,5)
+title <- "Lupin"
+
+        MilkData$Cow <- as.vector(MilkData$Cow) 
+        time <- MilkData$Time
+        protein <- MilkData$protein
+        cow <- MilkData$Cow
+        
+        uqCow <- unique(cow)
+        uqCowTab <- table(cow)
+        uqCowLen <- length(uqCow)
+        MilkData$cowBM <- as.numeric( factor(rep(uqCow,uqCowTab),
+                                             labels = 1:uqCowLen))
+        cowBM <- MilkData$cowBM
+        
+        numGrp <- uqCowLen
+        numIntKnotsGbl <- 20
+        intKnotsGbl <- quantile(unique(time),
+                        seq(0,1,length=numIntKnotsGbl+2))[-c(1,numIntKnotsGbl+2)] 
+        
+        range.time <- c(min(MilkData$Time), max(Milk$Time))
+        Zgbl <- ZOSull(time, range.x = range.time, intKnots = intKnotsGbl)
+        
+        numIntKnotsGbl <- 20
+        intKnotsGbl <- quantile(unique(time),
+                        seq(0,1,length=numIntKnotsGbl+2))[-c(1,numIntKnotsGbl+2)] 
+        
+        range.time <- c(min(MilkData$Time), max(Milk$Time))
+        Zgbl <- ZOSull(time, range.x = range.time, intKnots = intKnotsGbl)
+        
+        numIntKnotsGrp <- 10
+        intKnotsGrp <- quantile(unique(time),
+                        seq(0,1,length=numIntKnotsGrp+2))[-c(1,numIntKnotsGrp+2)]
+        Zgrp <- ZOSull(time, range.x = range.time, intKnots = intKnotsGrp)
+        
+        
+        dummyId <- factor(rep(1,length(protein)))
+        
+        Zblock <- list(dummyId = pdIdent(~ -1 + Zgbl),
+                       cowBM = pdSymm(~time),
+                       cowBM = pdIdent(~-1+Zgrp))
+        
+        MilkGD <- groupedData( protein ~ time|rep(1, length = length(protein)),
+                               data = data.frame(protein, time, Zgbl, Zgrp, cowBM ))
+        fitMilkGD <- lme(protein ~ time, data=MilkGD, random = Zblock)
+
+        ng <- 250
+        timeg <- seq(range.time[1], range.time[2], length = ng)
+        Xg <- cbind(rep(1,ng), timeg)
+        Zgblg <- ZOSull(timeg,range.x = range.time, intKnots = intKnotsGbl)
+        Zgrpg <- ZOSull(timeg,range.x = range.time, intKnots = intKnotsGrp)
+        
+        betaHat <- as.vector(fitMilkGD$coef$fixed)
+        uHat <- as.vector(fitMilkGD$coef$random[[1]])
+        fHatg <- as.vector(Xg%*%betaHat + Zgblg%*%uHat)
+        
+        curvEsts <- vector("list", numGrp)
+        for(i in 1:numGrp){
+                uLinHati <- as.vector(fitMilkGD$coef$random[[2]][i,])
+                uSplHati <- as.vector(fitMilkGD$coef$random[[3]][i,])
+                ghati <- Xg%*%uLinHati + Zgrpg%*%uSplHati
+                curvEsts[[i]] <- fHatg + ghati
+        }
+        
+        xyplot( protein ~ time|cowBM, groups = cowBM,
+                data = MilkData,
+                strip = FALSE,
+                xlab = "Time moment",
+                ylab = "Protein level",
+                main = title,
+                as.table = TRUE, layout = c(dimplot[1],dimplot[2]),
+                panel = function(x,y,subscripts,groups){
+                        
+                        panel.grid()
+                        adolNum <- cowBM[subscripts][1]
+                        panel.superpose(x,y,subscripts,groups,
+                        col = "darkgreen",type = "b")
+                        panel.xyplot(timeg, curvEsts[[adolNum]],
+                                     col = "palegreen", type ="l")
+                })
+
+```
+
+
+
+```{r, echo = F, message = T}
+MilkData <- BarLup
+dimplot <- c(6,5)
+title <- "Barley + lupin"
+
+        
+        MilkData$Cow <- as.vector(MilkData$Cow) 
+        time <- MilkData$Time
+        protein <- MilkData$protein
+        cow <- MilkData$Cow
+        
+        uqCow <- unique(cow)
+        uqCowTab <- table(cow)
+        uqCowLen <- length(uqCow)
+        MilkData$cowBM <- as.numeric( factor(rep(uqCow,uqCowTab),
+                                             labels = 1:uqCowLen))
+        cowBM <- MilkData$cowBM
+        
+        numGrp <- uqCowLen
+        numIntKnotsGbl <- 20
+        intKnotsGbl <- quantile(unique(time),
+                        seq(0,1,length=numIntKnotsGbl+2))[-c(1,numIntKnotsGbl+2)] 
+        
+        range.time <- c(min(MilkData$Time), max(Milk$Time))
+        Zgbl <- ZOSull(time, range.x = range.time, intKnots = intKnotsGbl)
+        
+        numIntKnotsGbl <- 20
+        intKnotsGbl <- quantile(unique(time),
+                        seq(0,1,length=numIntKnotsGbl+2))[-c(1,numIntKnotsGbl+2)] 
+        
+        range.time <- c(min(MilkData$Time), max(Milk$Time))
+        Zgbl <- ZOSull(time, range.x = range.time, intKnots = intKnotsGbl)
+        
+        numIntKnotsGrp <- 10
+        intKnotsGrp <- quantile(unique(time),
+                        seq(0,1,length=numIntKnotsGrp+2))[-c(1,numIntKnotsGrp+2)]
+        Zgrp <- ZOSull(time, range.x = range.time, intKnots = intKnotsGrp)
+        
+        
+        dummyId <- factor(rep(1,length(protein)))
+        
+        Zblock <- list(dummyId = pdIdent(~ -1 + Zgbl),
+                       cowBM = pdSymm(~time),
+                       cowBM = pdIdent(~-1+Zgrp))
+        
+        
+        MilkGD <- groupedData( protein ~ time|rep(1, length = length(protein)),
+                               data = data.frame(protein, time, Zgbl, Zgrp, cowBM ))
+        fitMilkGD <- lme(protein ~ time, data=MilkGD, random = Zblock)
+
+        ng <- 250
+        timeg <- seq(range.time[1], range.time[2], length = ng)
+        Xg <- cbind(rep(1,ng), timeg)
+        Zgblg <- ZOSull(timeg,range.x = range.time, intKnots = intKnotsGbl)
+        Zgrpg <- ZOSull(timeg,range.x = range.time, intKnots = intKnotsGrp)
+        
+        betaHat <- as.vector(fitMilkGD$coef$fixed)
+        uHat <- as.vector(fitMilkGD$coef$random[[1]])
+        fHatg <- as.vector(Xg%*%betaHat + Zgblg%*%uHat)
+        
+        curvEsts <- vector("list", numGrp)
+        for(i in 1:numGrp){
+                uLinHati <- as.vector(fitMilkGD$coef$random[[2]][i,])
+                uSplHati <- as.vector(fitMilkGD$coef$random[[3]][i,])
+                ghati <- Xg%*%uLinHati + Zgrpg%*%uSplHati
+                curvEsts[[i]] <- fHatg + ghati
+        }
+        
+
+        xyplot( protein ~ time|cowBM, groups = cowBM,
+                data = MilkData,
+                strip = FALSE,
+                xlab = "Time moment",
+                ylab = "Protein level",
+                main = title,
+                as.table = TRUE, layout = c(dimplot[1],dimplot[2]),
+                panel = function(x,y,subscripts,groups)
+                {  
+                   panel.grid()
+                        adolNum <- cowBM[subscripts][1]
+                   panel.superpose(x,y,subscripts,groups,                        
+                                   col = "darkgreen",type = "b")
+                   panel.xyplot(timeg, curvEsts[[adolNum]],
+                                col = "palegreen", type ="l")
+                })
+        
+
+```

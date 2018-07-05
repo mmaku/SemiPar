@@ -1,0 +1,399 @@
+---
+title: "Semiparametric regression"
+author: "Makowski Micha³"
+date: "10 may 2017"
+output:
+  pdf_document:
+    fig_caption: yes
+    highlight: tango
+    toc: yes
+lang: en-EN
+geometry: margin=1.5cm
+subtitle: 'Homework Assignment #4'
+fontsize: 10pt
+---
+
+```{r knitrOptions, include=FALSE}
+
+inline_hook = function(x) { if (is.numeric(x)) { format(x, digits=2) } else x}
+
+knitr::knit_hooks$set(inline=inline_hook)
+knitr::opts_chunk$set(comment="", message=FALSE, tidy.opts=list(keep.blank.line=TRUE,
+                      width.cutoff=120), options(width=100), warning=FALSE, error=FALSE, fig.align='center',
+                      fig.height=5.5, fig.width=10, fig.show='hold',
+                      size='footnotesize')
+
+```
+
+```{r libraries, include=FALSE}
+
+rm(list=ls())
+
+options(width=100)
+
+# install.packages("HRW")
+library(HRW)
+# install.packages("mgcv")
+library(mgcv)
+# install.packages("lattice")
+library(lattice)
+# install.packages("nlme")
+library(nlme)
+
+data(femSBMD)
+data(growthIndiana)
+
+```
+
+## Introduction
+
+This couple pages cover fourth homework for Semiparametric Regression, 
+a course conducted by proffesor Jaros³aw Harê¿lak at University of Wroc³aw. 
+On the following pages three exercises will be presented. They are focused on mixed models 
+on grouped data. Examples of such data are obtain during medical studies in which patients 
+are followed over time and measurements on them recorded repeatedly, 
+educational studies in which students grouped into classrooms and schools are scored 
+on examinations and sample surveys in which the respondents to questionnaires are 
+grouped within geographical districts.
+
+Mixed models are a good choice for the analysis of grouped data, with random effects used
+to account for within-group dependence. 
+
+Packages __HRW__ (data), __mgcv__ (model fitting) and __lattice__ (visualization)
+will be used.
+
+\newpage
+## Exercise II (Additive Mixed Models)
+
+In exercise II we want to fit smooth line to the data about spinal bone mineral density.
+
+At first, we plot the data divided by ethnic group.
+
+```{r 2_intro}
+
+xyplot(spnbmd~age|factor(ethnicity), 
+       group = idnum, 
+       data = femSBMD, 
+       xlab = "age (years)", 
+       ylab = "spinal bone mineral density (g/cm2)", 
+       panel = function(x,y,subscripts,groups)
+       {
+           panel.grid()
+           panel.superpose(x,y,subscripts,groups,type = "b",pch = 16,lwd = 2)
+       })
+
+```
+
+Above graph shows how the spinal bone mineral density chages during the life of a single
+represantative in each cohort. We can see some dependecies, which are different in each group 
+and we would like to focus on them a little more.
+
+For such data we will use following model:
+$$
+\text{spnbmd}_{i,j}=U_i+f(\text{age}_{i,j})+\beta_1 \text{black}_i+\beta_2 \text{hispanic}_i+\beta_3 \text{white}_i+\epsilon_{i,j}\\
+1\le j\le n_i,\quad 1\le i\le 230\\
+U\sim N(0,\sigma^2_U),\epsilon_i\sim N(0,\sigma^2_{\epsilon})
+$$
+where $\text{black}_i$, $\text{hispanic}_i$, $\text{white}_i$ are of course indicators
+and $\text{spnbmd}_{i,j}$ are the mesurments of spinal bone density 
+of *i*th subject at *j*th time.
+
+\newpage
+We could interprate this model as following: Asian group is the "basis", the reference, the coefficients
+$\beta_1$, $\beta_2$ and $\beta_3$ are the modifications of the mean in other ethics groups.
+
+```{r 2_model}
+
+fit = gamm(spnbmd~s(age) + black + hispanic + white, random = list(idnum = ~1), data = femSBMD)
+plot(fit$gam, shade = TRUE, shade.col = "palegreen")
+
+```
+
+The shaded region corresponds to pointwise approximate 95% confidence in-
+tervals. Note that default plotting of the estimate of $f(\text{age})$ involves vertical centering about zero.
+
+\newpage
+Let's have a look at the summary
+
+```{r 2_summary}
+
+summary(fit$gam)
+
+```
+
+Note that the fitted age effect involves 7.201 effective degrees of freedom.
+Let's look at the confidence intervals
+
+```{r 2_intervals}
+
+intervals(fit$lme)
+
+```
+
+This output shows that an approximate 95% confidence interval for $\beta_1$ is $(0.0482,0.116)$,
+which indicates a statistically significant difference between the Asian and Black
+females in terms of mean spinal bone mineral density. However, there is no
+significant difference between Hispanic or White females and Asian females.
+An approximate 95% confidence interval for $\sigma_{U}$ is $(0.114,0.131)$, which 
+implies significant within-subject correlation. The 95% confidence interval for
+$\sigma_{\epsilon}$ is $(0.0347,0.0390)$.
+
+\newpage
+## Exercise III (Models with Group-Specific Curves)
+
+In exercise III we want to fit group-specific model to the data of adolescent 
+somatic growth obtained from a study of the mechanisms of human hypertension 
+development conducted at the Indiana University School of Medicine, Indianapolis, 
+Indiana, USA. Pratt et al.(1989).
+
+We restrict attention to the black males in the study. The following plot show the trend of 
+each subject, there are 28 of them.
+
+```{r 3_intro}
+
+growthINblackMales = growthIndiana[(growthIndiana$male == 1) & (growthIndiana$black == 1),]
+
+xyplot(height~age|idnum,
+       group = idnum,
+       data = growthINblackMales,
+       layout = c(4,7),
+       strip = F,
+       xlab = "age (years)",
+       ylab = "height (centimeters)",
+       as.table = TRUE,
+       panel = function(x,y,subscripts,groups)
+       {
+           panel.grid()
+           panel.superpose(x,y,subscripts,groups,col = "dodgerblue",type = "b")
+       })
+
+```
+
+Above graph shows the history for each, individual representative. We notice that 
+he shapes of the curves for each adolescent differ quite markedly
+and the simple additive mixed models would not capture such behavior very well.
+
+Instead, such data we will use following model:
+$$
+\text{height}_{i,j}=f(\text{age}_{i,j})+g_i(\text{age}_{i,j})+\epsilon_{i,j}\\
+1\le j\le n_i,\quad 1\le i\le 28\\
+\epsilon_{i}\sim N(0,\sigma^2_{\epsilon})
+$$
+where $n_i$ is the number of measurments for *i*th subject, $g_i$ is a function
+that represents that adolescent’s departure from the overall mean function $f$.
+This is **semiparametric mixed model**.
+
+\newpage
+Modeling of $f$ and the $g_i$ can proceed according to
+
+$$
+f(x) = \beta_0 + \beta_1 x + \sum_{k=1}^{K_{gbl}}u_{gbl,k}z_{gbl,k}(x), 
+\qquad u_{gbl,k}|\sigma_{gbl}\sim N(0,\sigma^2_{gbl})\\
+g_i(x)=U_{0i}+U_{1i}x+\sum_{k=1}^{K_{grp}}u_{grp,ik}z_{grp,k}(x)\\
+\begin{bmatrix}
+    U_{0i}\\
+    U_{1i}
+\end{bmatrix}
+\sim N(0,\Sigma), \qquad u_{grp,ik}|\sigma_{grp}\sim N(0,\sigma^2_{grp})
+$$
+
+where $z_{gbl,k}$ and $z_{grp,k}$ are suitable spline bases of sizes
+$K_{gbl}$ and $K_{grp}$ respectively. We will use canonical O’Sullivan splines. 
+Typically, $K_{grp}$ is smaller than $K_{gbl}$ since
+fewer basis functions are needed to handle group-specific deviations.
+
+\newpage
+## Exercise IV (Fitting Group-Specific Curves Models)
+
+To fit model introduced in exercise III we will use package **nlme**.
+
+At first we wxtract the necessary variables from the __growthINblackMales__
+dataset
+
+```{r 4_dataPrep}
+
+age = growthINblackMales$age
+height = growthINblackMales$height
+idnum = growthINblackMales$idnum
+
+```
+
+Then we create an array with identification numbers
+
+```{r 4_dataPrep2}
+
+uqID = unique(idnum)
+uqID.tab = table(idnum)
+uqID.len = length(uqID)
+growthINblackMales$idnumBM = as.numeric(factor(rep(uqID, uqID.tab), labels= 1:uqID.len))
+idnumBM = growthINblackMales$idnumBM
+
+```
+
+Next, we will set up the design matrices $Z_{gbl}$, containing the
+$Z_{gbl,k}$, and $Z_{grp}$, containing the $Z_{grp,k}$
+
+```{r 4_matrices1}
+
+numObs = length(height)
+numGrp = uqID.len
+numIntKnotsGbl = 20
+intKnotsGbl = quantile(unique(age),
+seq(0,1,length=numIntKnotsGbl+2))[-c(1,numIntKnotsGbl+2)]
+range.age = c(5.5,20)
+Zgbl = ZOSull(age,range.x=range.age,intKnots=intKnotsGbl)
+
+numIntKnotsGrp = 10
+intKnotsGrp = quantile(unique(age),
+seq(0,1,length=numIntKnotsGrp+2))[-c(1,numIntKnotsGrp+2)]
+Zgrp = ZOSull(age,range.x=range.age,intKnots=intKnotsGrp)
+
+```
+
+Then we set up the random effect structure for the call to $\text{lme()}$
+
+```{r 4_matrices2}
+
+dummyId = factor(rep(1,numObs))
+Zblock = list(dummyId=pdIdent(~-1+Zgbl),idnumBM=pdSymm(~age),idnumBM=pdIdent(~-1+Zgrp))
+
+```
+
+Let have a brief look at operation done above:
+
+
+* The dummy identification variable $\text{dummyID}$, an array of length $\text{numObs}$, the total number of observations, with all entries equal to one tricks $\text{lme()}$ into accommodating the global penalized spline component.
+* The list entry $\text{dummyId=pdIdent(~-1+Zgbl)}$ invokes the multiple of identity matrix structure $u_{gbl}\sim N(0,\sigma^2_{gbl}I)$ across the entire dataset regardless of within-subject grouping.
+* The list item $\text{idnumBM=pdSymm(~age)}$ invokes the block-diagonal unstructured $2\times2$ covariance matrix form on the $[U_{0i},U_{1i}]^T$, $1\le i\le 23$, as required by the model, 
+* Similarly $\text{pdIdent(~-1+Zgrp)}$ accommodates $u_{grp,ik}|\sigma_{grp}\sim N(0,\sigma^2_{grp})$
+
+We are now ready to call $\text{lme()}$ with the random argument set to $\text{Zblock}$
+
+```{r 4_mode}
+
+blkMalGD = groupedData(height ~ age|rep(1,length = numObs), 
+                        data = data.frame(height,age,Zgbl,Zgrp,idnumBM))
+fit = lme(height ~ age,data = blkMalGD,random = Zblock)
+
+```
+
+Now let's plot fitted curves, firtsly we wetup the fixed and random design matrices
+
+```{r 4_plotting}
+
+ng = 201
+ageg = seq(range.age[1],range.age[2],length = ng)
+Xg = cbind(rep(1,ng),ageg)
+Zgblg = ZOSull(ageg,range.x = range.age,
+intKnots = intKnotsGbl)
+Zgrpg = ZOSull(ageg,range.x = range.age,
+intKnots = intKnotsGrp)
+
+```
+
+\newpage
+Then we extract the model coefficients
+
+```{r 4_extractingCoef}
+
+betaHat = as.vector(fit$coef$fixed)
+uHat = as.vector(fit$coef$random[[1]])
+fHatg = as.vector(Xg%*%betaHat + Zgblg%*%uHat)
+
+```
+
+In the end we estimate the subject-specific curves
+
+```{r 4_estCurves}
+
+curvEsts = vector("list",numGrp)
+for (i in 1:numGrp)
+{
+    uLinHati = as.vector(fit$coef$random[[2]][i,])
+    uSplHati = as.vector(fit$coef$random[[3]][i,])
+    ghati = Xg%*%uLinHati + Zgrpg%*%uSplHati
+    curvEsts[[i]] = fHatg + ghati
+}
+
+```
+
+Finally, we are ready to plot the curves
+
+```{r 4_plot}
+
+xyplot(height ~ age|idnumBM,groups = idnumBM,
+       data = growthINblackMales,
+       strip = FALSE,
+       xlab = "age (years)",
+       ylab = "height (centimeters)",
+       as.table = TRUE, layout = c(4,7),
+       panel = function(x,y,subscripts,groups)
+       {  
+           panel.grid()
+           adolNum = idnumBM[subscripts][1]
+           panel.superpose(x,y,subscripts,groups,col = "dodgerblue",type = "b")
+           panel.xyplot(ageg,curvEsts[[adolNum]],col = "blue",type = "l")
+       })
+
+```
+
+\newpage
+We have to remember to check the standardized residuals from the fit shown in the
+last plot. Let's see
+
+```{r 4_plotFit}
+
+plot(fit)
+
+```
+
+We connot see any distinct patterns or outliers.
+
+\newpage
+## Exercise V 
+
+Model presented in **Exercise II** for the female spinal bone mineral density data assumes that the mean
+functions for each ethnicity category differ only by vertical shifts.
+A more flexible model is
+
+$$
+\text{spnbmd}_{i,j}=U_i+f_{ethnicity}(\text{age}_{i,j})+\epsilon_{i,j}\\
+1\le j\le n_i,\quad 1\le i\le 230\\
+U\sim N(0,\sigma^2_U),\epsilon_i\sim N(0,\sigma^2_{\epsilon})
+$$
+where
+$$
+\text{etnicity}\in\{\text{asian},\text{black},\text{hispanic},\text{white}\},\quad 1\le i\le 230.
+$$
+
+Now we will create such model and look at it's summary
+
+```{r 5_model}
+
+fitEthno = gamm(spnbmd~s(age, by=ethnicity), random = list(idnum = ~1), data = femSBMD)
+summary(fitEthno$gam)
+
+```
+
+We can see that smoothing splines for Asian and Hispanic are quite similiar, while for other ethnics groups 
+they differ. That correlate with our summory of **Exercise II**. Now we will plot the smooting splines for each group. For more analysis we could call $\text{summary(fitEthno\$gam)}$, it gives us more information 
+about mixed effects.
+
+
+\newpage
+Let's compare fitted splines graphicaly 
+```{r 5_sumamry}
+
+plot(fitEthno$gam, shade = TRUE, shade.col = "palegreen", pages = 2)
+
+```
+
+All plots slightly differ from each other. The axes are locked for every group, 
+that let us to compare each other.
+
+
+
+
+
+
+

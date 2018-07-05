@@ -1,0 +1,822 @@
+---
+title: "Semiparametric Regression"
+author: "Gogo³owicz Diana, Makowski Micha³"
+date: "15 June 2017"
+output:
+  pdf_document:
+    highlight: tango
+    toc: yes
+header-includes:
+- \usepackage{booktabs}
+- \usepackage{subfig}
+- \usepackage{graphicx}
+lang: pl-PL
+subtitle: Project - Bike Rentals
+geometry: margin=0.75in
+fontsize: 10pt
+---
+
+```{r knitrOptions, include=FALSE}
+
+inline_hook=function(x) { if (is.numeric(x)) { format(x, digits=5) } else x}
+
+knitr::knit_hooks$set(inline=inline_hook)
+knitr::opts_chunk$set(comment="", message=FALSE, echo=FALSE, warning=FALSE, error=FALSE, 
+                      tidy.opts=list(keep.blank.line=TRUE, width.cutoff=120),
+                      # cache = T,
+                      options(width=100), fig.align='center', fig.height=4, dev = 'png', dpi = 128,
+                      fig.width=8, fig.path='figure/plot', fig.show='hold', size='footnotesize')
+
+```
+
+```{r libraries, include=FALSE}
+
+rm(list=ls())
+set.seed(100)
+
+library(caTools)
+library(ggplot2)
+library(scales)
+library(reshape2)
+library(dplyr)
+library(tidyr)
+library(mgcv)
+library(lattice)
+
+
+setwd("C:/Users/Michal/Dropbox/01 Studia/01 Szko³a - projekty/19 SemiPar/Project/")
+
+```
+
+```{r multiplot}
+
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) 
+{
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+```
+ 
+# Introduction
+
+This report was made as a summary of the grading project on *Semiparametric Regression*, the course conducted by 
+Prof. Jaros³aw Hare¿lak at University of Wroc³aw. 
+On the following pages we will focus on the data we choose, try to find some obvius and 
+less obvious dependencies beetwen them and, at the end, we will build some mathematical models to *squeeze* data even more 
+and generalize our knowledge about them.
+
+The course covered several types of regression models, from simple lienear model, through generalized linear models, 
+ending at generalized additive model, smoothing splines.
+ 
+<!-- Do poprawy   -->
+
+## Goal
+
+The goal of the final project was not clearly specifed, we have choose data on our own and then 
+try to analyze them as best as we could. That is interesting approach, beacuse every group came up with something different.
+Our efforts was summed up in the presentation and in this report.
+
+```{r setImportAndPrepare}
+
+hourly <- read.csv("hour.csv") # Wczytywanie
+daily <- read.csv("day.csv")
+
+hourly <- hourly[,-1]  # Wywalamy index
+daily <- daily[,-1]
+
+hourly$nextworking <- c(hourly$workingday[-(1:24)], 0*(1:24))
+daily$nextworking <- c(daily$workingday[-1], 0)
+
+factorLabels <- list(c("Winter", "Spring", "Summer", "Fall"), # Poziomy zmiennych jakoœciowych
+                c("2011", "2012"),
+                c("No", "Yes"),
+                c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"),
+                c("No", "Yes"),
+                c("Good", "Mediocre", "Bad"),
+                c("No", "Yes"))
+
+factorOrder = c(F,T,F,F,F,F,F) # Czy zmienna jakoœciowa jest porz¹dkowa?
+    
+hourly$weathersit[hourly$weathersit==4] = 3 # "Very bad" do "Bad" // by³y tylko 4 "Very bad"
+
+j <- 1
+for(i in c(2,3,6:9,17)) # "Zjakoœciowanie"
+{
+    hourly[,i] <- factor(hourly[,i], 
+                         labels = factorLabels[[j]],
+                         ordered = factorOrder[j])
+    j = j + 1
+}
+
+hourly$temp <- 41 * hourly$temp 
+hourly$atemp <- 50 * hourly$atemp 
+hourly$windspeed <- 67 * hourly$windspeed 
+hourly$hum <- 100 * hourly$hum 
+
+j <- 1
+for(i in c(2,3,5:8,16)) # "Zjakoœciowanie"
+{
+    daily[,i] <- factor(daily[,i], 
+                         labels = factorLabels[[j]],
+                         ordered = factorOrder[j])
+    j = j + 1
+}
+
+daily$temp <- 41 * daily$temp 
+daily$atemp <- 50 * daily$atemp 
+daily$windspeed <- 67 * daily$windspeed 
+daily$hum <- 100 * daily$hum 
+
+hourly$mt <- runif(nrow(hourly)) # Losowoœæ minut
+
+```
+
+```{r namesChange}
+
+colnames(hourly) <- c("dateday","season","year","month","hour","holiday",
+                      "weekday","workingday","weather","temp","atemp","humidity",
+                      "windspeed","casual","registered","count","nextworking","minute") 
+
+colnames(daily) <- c("dateday","season","year","month","holiday",
+                     "weekday","workingday","weather","temp","atemp","humidity",
+                     "windspeed","casual","registered","count","nextworking")
+
+```
+
+```{r setDivide}
+
+# Pozdia³ na zbiór testowy i treningowy
+
+foo <- sample.split(hourly$count, floor(0.6*nrow(hourly))) 
+hourlyTrain=hourly#[foo,]
+hourlyValidate=hourly[!foo,]
+
+foo <- sample.split(daily$count, floor(0.6*nrow(daily))) 
+dailyTrain=daily#[foo,]
+dailyValidate=daily[!foo,]
+
+```
+
+\newpage 
+# Data overview 
+
+## Discription
+
+We choose the dataset which had been merged from three datasources. It contains information
+about public bike rentals (from company called Capital Bikes) in Washington, DC. 
+Data was recorded over the period of two years (2011-2012).
+There are two datasets, first which countain hourly records, second contaning cumulated daily data. 
+
+The raw data contained only information from rental system, but the information about weather and 
+holidays was added. All data are available at following sources:
+
+* Original Source: (http://capitalbikeshare.com/system-data)
+* Weather Information: (http://www.freemeteo.com)
+* Holiday Schedule: (\textit{)http://dchr.dc.gov/page/holiday-schedule)
+
+The raw merged data have following structure:
+
+> Data dictionary:
+>
+>	- instant: record index
+>	- dteday : date
+>	- season : season (1:spring, 2:summer, 3:fall, 4:winter)
+>	- yr : year (0: 2011, 1:2012)
+>	- mnth : month (1 to 12)
+>	- hr : hour (0 to 23)
+>	- holiday : weather day is holiday or not
+>	- weekday : day of the week
+>	- workingday : if day is neither weekend nor holiday is 1, otherwise is 0.
+>	+ weathersit : 
+>		- 1: Clear, Few clouds, Partly cloudy
+>		- 2: Mist + Cloudy, Mist + Broken clouds, Mist + Few clouds, Mist
+>		- 3: Light snow, Light rain + Thunderstorm + Scattered clouds, Light rain + Scattered clouds
+>		- 4: Heavy rain + Ice pallets + Thunderstorm + Mist, Snow + Fog
+>	- temp : Normalized temperature in Celsius. The values are divided to 41 (max)
+>	- atemp: Normalized feeling temperature in Celsius. The values are divided to 50 (max)
+>	- hum: Normalized humidity. The values are divided to 100 (max)
+>	- windspeed: Normalized wind speed. The values are divided to 67 (max)
+>	- casual: count of casual users
+>	- registered: count of registered users
+>	- cnt: count of total rental bikes including both casual and registered
+
+We have several information about date&time, rentals and weather. All of them do not need any more clarification.
+
+\newpage
+## Preparation
+
+As we can see above, there were some data preparation required: all data which are discrete characteristics were converted to 
+factor variables. The temperatures, wind speed and humidity were converted to their real vaules 
+(we "unnormalize" them, it will be easier to interpret them). We decide not to factorize *month* variable, we suppose there might
+be trend visible over the whole year.
+We added *nextworking* variable, it descibes whether following day is working or not 
+(we would like to invistigate rentiers behavior at the evenings/nights before day off).
+As there were only 4 "Very bad" days, we merge them with "Bad" category.
+
+Below short summary of data is presented. It gives some overview how they look like, we will do this only for cumulated daily data.
+
+```{r basics}
+
+summary(dailyTrain)
+
+```
+
+\newpage
+# Data exploration
+
+We divide available information in 3 categories for better paper orginization:
+
+* Rental data  
+  **count, casual, registered**
+* Date\&Time  
+  **date, year, month, day, hour, season, isworkingday, isweekend**
+* Weather  
+  **weather, temp, humidity, windspeed**
+  
+Of course some of the information will "jump" into different categories.
+
+## Rentals
+
+### Daily
+
+We begin with raw analysis of daily rentals number, let's plot some histograms.
+
+```{r dailyHist, fig.height=6}
+
+m <- ggplot(dailyTrain, aes(x=count, colour=workingday)) +
+    geom_histogram() +
+    xlab("Number of bikes rented") +
+    ylab("Count") +
+    ggtitle("Rentals distribution") +
+    scale_colour_discrete(name="Is working day?") +
+    theme_light()
+
+n <- ggplot(dailyTrain, aes(x=registered, colour=workingday)) +
+    geom_histogram() +
+    xlab("Number of \"registered\" bikes rented") +
+    ylab("Count") +
+    guides(colour = "none") +
+    theme_light()
+
+o <- ggplot(dailyTrain, aes(x=casual, colour=workingday)) +
+    geom_histogram() +
+    xlab("Number of \"casual\" bikes rented") +
+    ylab("Count") +
+    guides(colour = "none") +
+    theme_light()
+
+multiplot(m, n, o, layout = matrix(c(1,1,2,3), nrow=2, byrow=TRUE))
+
+```
+
+We can see there is significant diffrence is distribution of each group. Registered user seems to be more "bounded" to city bikes, 
+the situation where none of them rent the bike happens very rarely. The distribution of casuals is much more skewed toward zero.
+We can observe important dependency: highest number of bikes rented for each group are achieved on diffrent days: 
+for casuals it is on holidays, for registered it is on working days. We will dive into this later.
+
+\newpage
+### Hourly
+
+Now it is time for hourly rentals.
+
+```{r hourlyHist}
+
+m <- ggplot(hourlyTrain, aes(x=count, colour=workingday)) +
+    geom_histogram() +
+    xlab("Number of bikes rented") +
+    ylab("Count") +
+    ggtitle("Rentals distribution") +
+    scale_colour_discrete(name="Is working day?") +
+    theme_light()
+
+n <- ggplot(hourlyTrain, aes(x=registered, colour=workingday)) +
+    geom_histogram() +
+    xlab("Number of \"registered\" bikes rented") +
+    ylab("Count") +
+    guides(colour = "none") +
+    theme_light()
+
+o <- ggplot(hourlyTrain, aes(x=casual, colour=workingday)) +
+    geom_histogram() +
+    xlab("Number of \"casual\" bikes rented") +
+    ylab("Count") +
+    guides(colour = "none") +
+    theme_light()
+
+multiplot(m, n, o, layout = matrix(c(1,1,2,3), nrow=2, byrow=TRUE))
+
+```
+
+The histograms are completely diffrent comparing them to the last ones.
+but we could observe the same dependecy (for working days and holidays), 
+as for hourly rentals. That shows it might be worth deeper analysis. 
+
+Bins for each histograms are the same. 
+
+### Monthly
+
+Let's plot monthly avareges.
+
+```{r monthMean}
+
+monthMean <- hourlyTrain %>% 
+  group_by(month,year)  %>%
+  summarise(month_rental_mean = mean(count)) 
+
+```
+
+```{r monthMeanPlot, fig.height=3}
+
+ggplot(monthMean, aes(x=month, y=month_rental_mean,fill=year)) +
+  geom_bar(stat="identity", position="dodge") +
+    labs(x = "Season", y = "Number of bike rented", title = "Monthly rental avarages") +
+    scale_fill_discrete("Type")
+  
+```
+
+We can see visible change of rentals over a year. For each month number of bikes rented increased by tens of percents by year.
+If we had more data, we would invistigate this trend better. Nonetheless, year seems to be important factor in modeling 
+bikes popularity.
+
+
+\newpage
+## Date\&Time + Weather 
+
+On the following pages we will try to show dependecies beetween number of bikes rented per hour/day and weather.
+
+### Daily
+
+Let's add information about **Date&Time** and **Weather** to raw rental data.
+On the following plots we will present how daily rentals distribute over two years.
+
+```{r plotDaily, fig.height=6}
+
+n <- ggplot(dailyTrain, aes(x=as.Date(dateday), color=atemp)) +
+    geom_line(aes(y=count), size = 1.1) +
+    xlab("Day of the year") +
+    ylab("Number of bike rented") +
+    ggtitle("Rentals per day") +
+    scale_colour_gradientn("Temp[°C]", colours=c("#5e4fa2", "#3288bd", "#66c2a5", "#abdda4",
+                                                 "#e6f598", "#fee08b", "#fdae61", "#f46d43",
+                                                 "#d53e4f", "#9e0142")) +
+    theme_light()
+
+m <- ggplot(dailyTrain, aes(x=as.Date(dateday))) +
+    geom_line(aes(y=registered, colour = "Registered")) +
+    geom_line(aes(y=casual, colour = "Casuals")) +
+    xlab("Day of the year") +
+    ylab("") +
+    ggtitle("Rentals per day (divided)") +
+    scale_colour_discrete(name="Type") +
+    theme_light()
+
+o <- ggplot(dailyTrain, aes(x=as.Date(dateday))) +
+    geom_line(aes(y=registered-casual), size = .5, color = "blue") +
+    xlab("Day of the year") +
+    ylab("Number of bike rented") +
+    ggtitle("Diffrence per day (registered-casual)") +
+    theme_light()
+
+multiplot(n, m, o, layout = matrix(c(1,2,3,3), nrow=2, byrow=TRUE))
+
+```
+
+First plot (upper left) shows how many people were using city bikes each day, of course seasons are well visible there, 
+people prefer using publiic bikes during spring and summer. We also could see about 50% increase in overal popularity of bikes 
+(from ~4500 to ~7000).
+
+From second, upper right plot, which divide rentals into this done by registered and casual users, who we could deduce that over time
+bigger and bigger fraction of users are those registered in the system. Among registered users the increase of 
+rentals over two years is much more visible.
+
+Last, lower, plot, proof this observation - over time the diffrence beetween registered and casuals increse. Unfortunetelly,
+we do not have data to invistigate how many casuals began registered. 
+
+There is strange jump at the and of 2012, we do not have any information what could cause it. We tried to google it, 
+nothing informative came out. It might be preferable rental conditions for those who decide to sign up for the Capital Bikes program.
+
+```{r plotParameters}
+
+plotArguments <- list(c("hour", "count", "temp"),
+                      c("hour", "count", "humidity"),
+                      c("hour", "count", "weather"),
+                      c("hour", "count", "windspeed"),
+                      c("count", "humidity", "temp"),
+                      c("hour", "count", "nextworking"),
+                      c("hour", "count", "working"))
+
+```
+
+\newpage
+### Hourly
+
+#### Temperature
+
+Now we plot how number of rented bikes distributes over a day, taking into account temperature, wind speed and humidity.
+
+```{r plotTemp, fig.height=6}
+
+p <- ggplot(hourlyTrain, 
+            aes_string(x=plotArguments[[1]][1], 
+                       y=plotArguments[[1]][2], 
+                       color=plotArguments[[1]][3])) +  
+    geom_jitter() +
+    xlab("Hour of the Day") +
+    ylab("Number of bike rented") +
+    ggtitle("Overview") +
+    scale_colour_gradientn("Temp[°C]", colours=c("#5e4fa2", "#3288bd", "#66c2a5", "#abdda4", 
+                                                 "#e6f598", "#fee08b", "#fdae61", "#f46d43", 
+                                                 "#d53e4f", "#9e0142")) +
+    theme_light()
+
+plot(p)
+
+```
+
+Firstly we could observe that number of bikes rented is very high just before 8AM and after 4PM. We will focus on this later,
+but it suggest that people tend to use public bikes to go to/from work. 
+Moreover people tend to use bikes more often after work, that might suggest they do no want to use them early in the morning,
+when they are in a hurry. After work, they are more relaxed and use them more gladly (this statement might be too brave!).
+
+Secondly, what is obvious, people prefer using Capital Bikes when the temperature is higher, 
+nobody likes to cycle in freezing cold. :)
+
+\newpage
+#### Humidity&Wind
+
+Let's is there any influence of wind and humidity on rentals.
+
+```{r plotHum&Wind}
+
+p <- ggplot(hourlyTrain, 
+            aes_string(x=plotArguments[[1]][1], 
+                       y=plotArguments[[1]][2], 
+                       color=plotArguments[[2]][3])) +  
+    geom_jitter() +
+    xlab("Hour of the Day") +
+    ylab("Number of bike rented") +
+    # ggtitle("Wind&Humidity") +
+    scale_colour_gradient("Humidity[%]") +
+    theme_light()
+
+
+q <- ggplot(hourlyTrain, 
+            aes_string(x=plotArguments[[1]][1], 
+                       y=plotArguments[[1]][2], 
+                       color=plotArguments[[4]][3])) +  
+    geom_jitter() +
+    xlab("Hour of the Day") +
+    ylab("Number of bike rented") +
+    scale_colour_gradient("Wind speed[km/h]") +
+    theme_light()
+
+multiplot(p, q)
+
+```
+
+There is no visible influence, humidity and wind speed do not have very strong impact on people willingess to cycle.
+Or we just could not find it. :) There are some little patterns, but we will not focus on them.
+
+<!-- \newpage -->
+#### Weather
+
+Last but not least, we plot rentals number taking *weather* variable into account. 
+
+```{r plotWeather, fig.height=3.5}
+
+p <- ggplot(hourlyTrain, 
+            aes_string(x=plotArguments[[1]][1], 
+                       y=plotArguments[[1]][2], 
+                       color=plotArguments[[3]][3])) +  
+    geom_jitter() +
+    xlab("Hour of the Day") +
+    ylab("Number of bike rented") +
+    ggtitle("Overview") +
+    # scale_colour_gradientn("Temp[°C]", colours=c("#5e4fa2", "#3288bd", "#66c2a5", "#abdda4", 
+                                                 # "#e6f598", "#fee08b", "#fdae61", "#f46d43", 
+                                                 # "#d53e4f", "#9e0142")) +
+    theme_light()
+
+plot(p)
+
+```
+
+The dependency is visible, but it is not so strong as in temperature plot. People rather do not want to ride during bad weather,
+but mediocre and good seems to be at the same level of popularity.
+
+\newpage
+#### Weekday
+
+The plot which shows popularity of bikes during each day of the week is presented below.
+
+```{r plotWeekday, fig.height=3.5}
+
+p <- ggplot(hourlyTrain, 
+            aes_string(x=plotArguments[[1]][1], 
+                       y=plotArguments[[1]][2], 
+                       color=plotArguments[[1]][3])) +  
+    geom_jitter() +
+    facet_wrap(~weekday, ncol=4 ) +
+    xlab("Hour of the Day") +
+    ylab("Number of bike rented") +
+    ggtitle("Day of the week") +
+    scale_colour_gradientn("Temp[°C]", colours=c("#5e4fa2", "#3288bd", "#66c2a5", "#abdda4", 
+                                                 "#e6f598", "#fee08b", "#fdae61", "#f46d43", 
+                                                 "#d53e4f", "#9e0142")) +
+    theme_light()
+
+plot(p)
+
+```
+
+Thesis, that people seems to use city bikes to ride to work it even stronger now. The distribution of bikes popularity on
+weekdays is completely diffrent from this on weekends. Let's go further, crete only two plots, for working days and holidays.
+
+```{r plotWorkingday}
+
+# q <- ggplot(hourlyTrain, 
+#             aes_string(x=plotArguments[[1]][1], 
+#                        y=plotArguments[[1]][2], 
+#                        color=plotArguments[[1]][3])) +    
+#     geom_jitter() +
+#     facet_wrap(~workingday, ncol=1) +
+#     xlab("Hour of the Day") +
+#     ylab("Number of bike rented") +
+#     ggtitle("Was a workingday?") +
+#     scale_colour_gradientn("Temp[°C]", colours=c("#5e4fa2", "#3288bd", "#66c2a5", "#abdda4",
+#                                                  "#e6f598", "#fee08b", "#fdae61", "#f46d43",
+#                                                  "#d53e4f", "#9e0142")) +
+#     theme_light()
+# 
+# plot(q)
+
+q <- ggplot(hourlyTrain, 
+            aes_string(x=plotArguments[[1]][1], 
+                       y=plotArguments[[1]][2], 
+                       color=plotArguments[[3]][3])) +    
+    geom_jitter() +
+    facet_wrap(~workingday, ncol=1) +
+    xlab("Hour of the Day") +
+    ylab("Number of bike rented") +
+    ggtitle("Was a workingday?") +
+    scale_colour_discrete("Weather") +
+    theme_light()
+
+plot(q)
+
+```
+
+Plots above  somehow proof our concept, on holidays people use public days in completely diffrent way, 
+there are no peaks before and after work (of course, people are not going there!). 
+What is also visible, on working days weather has much bigger impact on people decision about using Capital Bikes. 
+On working days the "sandwich" structure is much more visible, 
+on holidays citizens rather do not use bikes in bad weather, but mediocre and good levels seems to be comparable popular.
+
+\newpage
+We invistigate obserwations from last paragraph a little deeper.
+
+```{r plotWorkingWeatheBox}
+
+r <- ggplot(dailyTrain) +      
+    geom_boxplot(aes(x=workingday, y=count, fill=workingday)) +
+    facet_wrap(~weather) +
+    xlab("") +
+    ylab("Number of bike rented") +
+    ggtitle("Weather?") +
+    scale_fill_discrete("Is working day?") +
+    theme_light() + 
+    scale_x_discrete(breaks=NULL)
+
+plot(r)
+
+```
+
+The concept of lack of sandwich structure during holidays seems to be fault. There is visible shift beetween each weather level, no matter at what type of the day we are focusing. The diffrence might be smaller for holidays, but it is stille there. 
+We could perform statistical tests to check it more deeply.
+
+#### Next working
+
+We invistigate whether the next working day have impact of citizens willingness of using public bikes.
+
+```{r plotWorkingBox}
+
+r <- ggplot(dailyTrain) +      
+    geom_boxplot(aes(x=nextworking, y=count, fill=nextworking)) +
+    facet_wrap(~workingday) +
+    xlab("") +
+    ylab("Number of bike rented") +
+    ggtitle("Is working day?") +
+    scale_fill_discrete("Is next working day?") +
+    theme_light() + 
+    scale_x_discrete(breaks=NULL)
+
+plot(r)
+
+```
+
+There is little diffrence, but we think it is not important.
+It would rather do not have any impact on citizens decision.
+
+\newpage
+## Casual vs Registered
+
+In this part we will focus on partition of the data which might be useful in bussinnes approach - on **casual** and **registered**
+user. We will plot diffrent characteristics for those two groups. On following pages several plots will be presented, 
+each followed by brief summary. Plots on the right show average number of bike rented in each subgroup.
+
+```{r casualVSregisteredPred}
+# W nowej tabeli w zmiennej num_rentals bêdzie liczba wypo¿yczeni przez registered/casual 
+# u¿ytkownika w zale¿noœci od wartoœci zmiennj dummy is registered.
+
+casual_vs_reg <- hourlyTrain  %>% select(-count) %>% gather(rental_type, num_rentals, casual:registered)
+
+```
+
+### Seasons
+
+```{r plotCVSR, fig.height=3.5}
+
+p <- ggplot(casual_vs_reg, aes(x=season, y=num_rentals)) + 
+    geom_boxplot(mapping = aes(fill = rental_type)) +
+    labs(x = "Season", y = "Number of bike rented", title = "") +
+    theme(legend.position="none")
+
+q <- ggplot(casual_vs_reg, aes(x=season, y=num_rentals)) + 
+    geom_bar(mapping = aes(fill = rental_type), stat="identity", position="dodge") +
+    labs(x = "Season", y = "", title = "") +
+    scale_fill_discrete("Type")
+
+multiplot(p, q, cols = 2)
+
+```
+
+Casual riders seems to choose Capital Bikes similiary often each season, while registered ones has diffrent preferations.
+
+### Working days
+
+```{r plotCVSR2, fig.height=3.5}
+
+p <- ggplot(casual_vs_reg, aes(x=workingday, y=num_rentals)) + 
+    geom_boxplot(mapping = aes(fill = rental_type)) +
+    labs(x = "Is working day?", y = "Number of bike rented", title = "") +
+    theme(legend.position="none")
+
+q <- ggplot(casual_vs_reg, aes(x=workingday, y=num_rentals)) + 
+    geom_bar(mapping = aes(fill = rental_type), stat="identity", position="dodge") +
+    labs(x = "Is working day?", y = "", title = "") +
+    scale_fill_discrete("Type")
+
+multiplot(p, q, cols = 2)
+
+```
+
+That is very interesting plot. We could observe that casual riders prefer to use bikes on holidays, 
+register ones use the more on workingdays. That could be very useful information for marketing department.
+The diffrence beetween casuals and registered is much smaller on holidays.
+
+### Weather
+
+```{r plotCVSR3, fig.height=3.5}
+
+p <- ggplot(casual_vs_reg, aes(x=weather, y=num_rentals)) + 
+    geom_boxplot(mapping = aes(fill = rental_type)) +
+    labs(x = "Weather", y = "Number of bike rented", title = "") +
+    theme(legend.position="none")
+
+q <- ggplot(casual_vs_reg, aes(x=weather, y=num_rentals)) + 
+    geom_bar(mapping = aes(fill = rental_type), stat="identity", position="dodge") +
+    labs(x = "Weather", y = "", title = "") +
+    scale_fill_discrete("Type")
+
+multiplot(p, q, cols = 2)
+
+```
+
+We tried to state that on holidays poeple do not care whether weather is good or mediocre. 
+Then, boxplots rather bring this thesis down. If we compare casuals and registered then that might be true. 
+There should be some statistical testing applied to verify this thesis, but that is not subject of this report.
+
+### Temperature
+
+```{r plotCVSR4, fig.height=3.5}
+
+ggplot(casual_vs_reg, aes(x=temp, y=num_rentals)) + 
+    geom_bar(mapping = aes(fill = rental_type), stat="identity", position="dodge") +
+    labs(x = "Temp[°C]", y = "Average number of bike rented", title = "") +
+    scale_fill_discrete("Type")
+
+```
+
+We could observe that casuals avoid riding in lower temperatures, for registered ones the distribution of mean is more uniform.
+
+### Hour
+
+```{r plotCVSR5, fig.height=3.5}
+
+ggplot(casual_vs_reg, aes(x=hour, y=num_rentals)) + 
+    geom_bar(mapping = aes(fill = rental_type), stat="identity", position="dodge") +
+    labs(x = "Hour", y = "Average number of bike rented", title = "") +
+    scale_fill_discrete("Type")
+
+```
+
+The pattern similiar to this obtained by dividing data into holidays and working days is visible. 
+
+### Conclusion
+
+Capital Bikes are very popular among casual riders during holidays. On the other hand, registered ones tend to use bikes on
+the working days. In following section we will build some models to prove this consept. 
+
+# Models
+
+<!-- ```{r model_I} -->
+
+<!-- hours = hourlyTrain$hour -->
+<!-- count = hourlyTrain$count -->
+<!-- isWorkin = hourlyTrain$workingday -->
+<!-- weather = hourlyTrain$weather -->
+<!-- windspeed = hourlyTrain$windspeed -->
+<!-- temper = hourlyTrain$temp -->
+
+
+<!-- fitGAMcr = gam(count~s(hours, bs="cr", k=24)) -->
+
+<!-- xg = seq(min(hours), max(hours), length=100) -->
+<!-- fHatgGAMcr = predict(fitGAMcr, newdata=data.frame(x=xg)) -->
+
+<!-- points = cbind.data.frame(hours, count) -->
+<!-- fit1 = cbind.data.frame(xg, fHatgGAMcr) -->
+
+<!-- ggplot() + -->
+<!--     geom_point(data=points, aes(x=hours, y=count), colour="lightblue") + -->
+<!--     geom_line(data=fit1, aes(x=xg, y=fHatgGAMcr), colour="darkgreen") + -->
+<!--     labs(title="Smoothing number of rented bikes", x="Hour", y="Number of bike rented") + -->
+<!--     theme_minimal() -->
+
+<!-- fitGAMcrREML = gam(count~s(hours, bs="cr", k=24), method="REML") -->
+<!-- fHatgGAMcrREML = predict(fitGAMcrREML, newdata=data.frame(x=xg)) -->
+
+<!-- fit5 = cbind.data.frame(xg, fHatgGAMcr, fHatgGAMcrREML) -->
+
+<!-- ggplot() + -->
+<!--     geom_point(data=points, aes(x=hours, y=count), colour="lightblue") + -->
+<!--     geom_line(data=fit5, aes(x=xg, y=fHatgGAMcr), colour="darkgreen") + -->
+<!--     geom_line(data=fit5, aes(x=xg, y=fHatgGAMcrREML), colour="darkred") + -->
+<!--     labs(title="Smoothing number of rented bikes - REML vs CR", x="Hour", y="Number of bike rented") + -->
+<!--     theme_minimal() -->
+
+<!-- ``` -->
+
+<!-- ```{r model_II} -->
+
+<!-- xyplot(count ~ hour|workingday,groups = weather, -->
+<!--        data = hourlyTrain, -->
+<!--        strip = FALSE, -->
+<!--        xlab = "Hour", -->
+<!--        ylab = "Number of bike rented", -->
+<!--        as.table = TRUE, layout = c(1,2)) -->
+
+<!-- ``` -->
+
+
+
+# Summary
+
+There are many relationships between number of rentals and environment characteristics.
+Most important factors are: weather, year, and working day.
+  
+Models build above could be used for predicting future interest in public bikes, 
+best time for servicing bikes and, if additional data will be provided, managing bike transportation.
+Also, different interest among different types of users was shown.
