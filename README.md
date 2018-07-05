@@ -3,7 +3,7 @@ Semiparametric regression
 
 Projects that I've done during the 'Semiparametric regression' course  conducted by Jaroslaw Harezlak at Mathematics Institute, University of Wrocław.
 
-COURSE SYLLABUS  (in Polish)
+COURSE SYLLABUS
 ===============
 
 1. Introduction to Semiparametric Regression.
