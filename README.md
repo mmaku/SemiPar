@@ -9,21 +9,21 @@
 
 ## Course syllabus
 
-1. Introduction to Semiparametric Regression.
-2. Linear Regression Methods Review.
-3. Introduction to Smoothing.
-4. Linear Mixed Models.
-5. Smoothing Parameter Selection.
-6. Linear Mixed Models and REML.
-7. Confidence Intervals, Confidence Bands and Hypothesis Testing.
-8. Simple Semiparametric Models.
-9. Additive Models.
-10. Semiparametric Mixed Models.
-11. Interaction Models.
-12. Introduction to Generalized Linear Models (GLM).
-13. Generalized Additive Models.
-14. Bivariate and Spatial Smoothing.
-15. Measurement Error Models.
+1. Introduction to semiparametric regression.
+2. Linear regression methods review.
+3. Introduction to smoothing.
+4. Linear mixed models.
+5. Smoothing parameter selection.
+6. Linear mixed models and reml.
+7. Confidence intervals, confidence bands and hypothesis testing.
+8. Simple semiparametric models.
+9. Additive models.
+10. Semiparametric mixed models.
+11. Interaction models.
+12. Introduction to generalized linear models (GLM).
+13. Generalized additive models.
+14. Bivariate and spatial smoothing.
+15. Measurement error models.
 
 ## Implementation
 
