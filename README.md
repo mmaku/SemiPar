@@ -5,7 +5,6 @@
 [![GitHub license](https://img.shields.io/github/license/mmaku/nn_scratch?style=flat-square)](https://github.com/mmaku/nn_scratch/blob/master/LICENSE)
 [![made-with-RStudion](https://img.shields.io/badge/Made%20with-RStudio%C2%AE-4AA4DE.svg?style=flat-square)](https://rstudio.com/)
 
-
 ![Sewaqu / Public domain](https://upload.wikimedia.org/wikipedia/commons/3/3a/Linear_regression.svg)
 
 ## Course syllabus
